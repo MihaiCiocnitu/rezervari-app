@@ -10,8 +10,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiem codul aplicatiei in container
+FROM python:3.9-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
-
+COPY index.html .
+EXPOSE 8080
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 # Expunem portul 8080 (Cloud Run foloseste 8080, nu 8000)
 EXPOSE 8080
 

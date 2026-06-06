@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rezervare Bilete</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+  body { background: #f4f6f9; min-height: 100vh; padding: 2rem 1rem; }
+  .container { max-width: 700px; margin: 0 auto; }
+  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; }
+  .header-icon { width: 44px; height: 44px; background: #1a73e8; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .header h1 { font-size: 20px; font-weight: 600; color: #1a1a1a; }
+  .header p { font-size: 13px; color: #666; }
+  .section-title { font-size: 12px; font-weight: 600; color: #888;
+    text-transform: uppercase; letter-spacing: .05em; margin-bottom: .75rem; }
+  .events-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1.5rem; }
+  .event-card { background: white; border: 2px solid #e8eaed; border-radius: 12px;
+    padding: 1rem; cursor: pointer; transition: all .15s; }
+  .event-card:hover { border-color: #aaa; }
+  .event-card.selected { border-color: #1a73e8; background: #e8f0fe; }
+  .event-card h3 { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 5px; }
+  .event-meta { font-size: 12px; color: #666; margin-bottom: 8px; }
+  .seats-badge { display: inline-block; background: #e6f4ea; color: #137333;
+    font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: 20px; }
+  .form-card { background: white; border-radius: 12px; padding: 1.5rem;
+    border: 1px solid #e8eaed; margin-bottom: 1rem; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1rem; }
+  .field label { display: block; font-size: 13px; font-weight: 500;
+    color: #444; margin-bottom: 5px; }
+  .field input { width: 100%; padding: 10px 12px; border: 1.5px solid #e0e0e0;
+    border-radius: 8px; font-size: 14px; outline: none; transition: border-color .15s; }
+  .field input:focus { border-color: #1a73e8; }
+  .btn-reserve { width: 100%; padding: 12px; background: #1a73e8; color: white;
+    border: none; border-radius: 8px; font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: background .15s; }
+  .btn-reserve:hover { background: #1557b0; }
+  .btn-reserve:disabled { background: #aaa; cursor: not-allowed; }
+  .ticket { display: none; background: #e6f4ea; border: 1.5px solid #34a853;
+    border-radius: 12px; padding: 1.25rem; }
+  .ticket-header { display: flex; align-items: center; gap: 8px; margin-bottom: 1rem; }
+  .ticket-header span { font-size: 20px; }
+  .ticket-header h2 { font-size: 16px; font-weight: 600; color: #137333; }
+  .ticket-info { font-size: 13px; color: #444; margin-bottom: 5px; }
+  .ticket-cod { font-family: monospace; font-size: 13px; background: white;
+    border: 1px solid #ccc; border-radius: 8px; padding: 10px 14px;
+    margin-top: 10px; word-break: break-all; color: #333; }
+  .error { display: none; background: #fce8e6; border: 1px solid #f28b82;
+    border-radius: 8px; padding: 10px 14px; color: #c5221f;
+    font-size: 13px; margin-top: 10px; }
+  .loading { color: #666; font-size: 13px; text-align: center; padding: 1rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-icon">🎫</div>
+    <div>
+      <h1>Rezervare Bilete</h1>
+      <p>Alege un eveniment si rezerva-ti locul in cateva secunde</p>
+    </div>
+  </div>
+
+  <div class="section-title">Evenimente disponibile</div>
+  <div class="events-grid" id="events-grid">
+    <div class="loading">Se incarca evenimentele...</div>
+  </div>
+
+  <div class="section-title">Datele tale</div>
+  <div class="form-card">
+    <div class="form-row">
+      <div class="field">
+        <label>Nume complet</label>
+        <input type="text" id="inp-name" placeholder="ex: Ion Popescu" />
+      </div>
+      <div class="field">
+        <label>Adresa de email</label>
+        <input type="email" id="inp-email" placeholder="ex: ion@email.com" />
+      </div>
+    </div>
+    <button class="btn-reserve" id="btn-rez" onclick="doRezerva()">
+      🎟️ Rezerva loc
+    </button>
+    <div class="error" id="err-box"></div>
+  </div>
+
+  <div class="ticket" id="ticket">
+    <div class="ticket-header">
+      <span>✅</span>
+      <h2>Rezervare confirmata!</h2>
+    </div>
+    <div class="ticket-info">Eveniment: <strong id="t-event"></strong></div>
+    <div class="ticket-info">Nume: <strong id="t-name"></strong></div>
+    <div class="ticket-info">Status: <strong style="color:#137333">Activ</strong></div>
+    <div style="font-size:12px;color:#666;margin-top:10px">Codul tau de validare (pastreaza-l!):</div>
+    <div class="ticket-cod" id="t-cod"></div>
+  </div>
+</div>
+
+<script>
+  let selectedEventId = null;
+  let selectedEventName = '';
+
+  async function loadEvents() {
+    try {
+      const res = await fetch('/events');
+      const events = await res.json();
+      const grid = document.getElementById('events-grid');
+      grid.innerHTML = '';
+      events.forEach(ev => {
+        const card = document.createElement('div');
+        card.className = 'event-card';
+        card.innerHTML = `
+          <h3>🎵 ${ev.titlu}</h3>
+          <div class="event-meta">📅 ${ev.data_ora.replace('T',' ').substring(0,16)}</div>
+          <span class="seats-badge">🪑 ${ev.locuri_disponibile} locuri libere</span>
+        `;
+        card.onclick = () => selectEvent(card, ev.id, ev.titlu);
+        grid.appendChild(card);
+      });
+      // Selecteaza primul eveniment automat
+      if (events.length > 0) {
+        grid.firstChild.click();
+      }
+    } catch(e) {
+      document.getElementById('events-grid').innerHTML =
+        '<div class="loading">Eroare la incarcarea evenimentelor.</div>';
+    }
+  }
+
+  function selectEvent(card, id, name) {
+    document.querySelectorAll('.event-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedEventId = id;
+    selectedEventName = name;
+    document.getElementById('btn-rez').textContent = '🎟️ Rezerva loc la ' + name;
+  }
+
+  async function doRezerva() {
+    const name = document.getElementById('inp-name').value.trim();
+    const email = document.getElementById('inp-email').value.trim();
+    const errBox = document.getElementById('err-box');
+    errBox.style.display = 'none';
+
+    if (!name || !email) {
+      errBox.textContent = 'Te rugam sa completezi numele si emailul.';
+      errBox.style.display = 'block';
+      return;
+    }
+    if (!selectedEventId) {
+      errBox.textContent = 'Te rugam sa selectezi un eveniment.';
+      errBox.style.display = 'block';
+      return;
+    }
+
+    const btn = document.getElementById('btn-rez');
+    btn.disabled = true;
+    btn.textContent = 'Se proceseaza...';
+
+    try {
+      const res = await fetch(
+        `/reserve?nume=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}&event_id=${selectedEventId}`,
+        { method: 'POST' }
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        errBox.textContent = data.detail || 'A aparut o eroare.';
+        errBox.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '🎟️ Rezerva loc la ' + selectedEventName;
+        return;
+      }
+
+      document.getElementById('t-event').textContent = selectedEventName;
+      document.getElementById('t-name').textContent = name;
+      document.getElementById('t-cod').textContent = data.cod_bilet;
+      document.getElementById('ticket').style.display = 'block';
+      document.getElementById('ticket').scrollIntoView({ behavior: 'smooth' });
+      btn.textContent = '✅ Rezervare facuta!';
+    } catch(e) {
+      errBox.textContent = 'Eroare de retea. Incearca din nou.';
+      errBox.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '🎟️ Rezerva loc la ' + selectedEventName;
+    }
+  }
+
+  loadEvents();
+</script>
+</body>
+</html>

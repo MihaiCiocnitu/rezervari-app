@@ -1,111 +1,106 @@
-# main.py - Aplicatia principala FastAPI pentru rezervare bilete
+MAIN_PY = '''
+# main.py - Microserviciu REST API pentru rezervare bilete cu interfata web
 
-from fastapi import FastAPI, HTTPException  # FastAPI = framework-ul web; HTTPException = erori HTTP
-from uuid import uuid4                      # uuid4 genereaza coduri unice pentru bilete
-import psycopg2                             # biblioteca pentru conectarea la PostgreSQL
-import os                                   # pentru citirea variabilelor de mediu
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+from uuid import uuid4
+import psycopg2
+import os
 
-# Initializam aplicatia FastAPI
 app = FastAPI(title="Rezervare Bilete API")
 
-# Functie care face conexiunea la baza de date Cloud SQL
-# Credentialele vin din variabile de mediu (mai sigur decat hardcodat)
+# Functie de conectare la Cloud SQL PostgreSQL
 def get_connection():
     return psycopg2.connect(
-        host=os.getenv("DB_HOST", "34.40.24.192"),       # IP-ul Cloud SQL
-        database=os.getenv("DB_NAME", "rezervari_db"),   # numele bazei de date
-        user=os.getenv("DB_USER", "postgres"),            # userul PostgreSQL
-        password=os.getenv("DB_PASS", "Rezervari2026!"), # parola
-        port=5432                                         # portul standard PostgreSQL
+        host=os.getenv("DB_HOST", "34.40.24.192"),
+        database=os.getenv("DB_NAME", "rezervari_db"),
+        user=os.getenv("DB_USER", "postgres"),
+        password=os.getenv("DB_PASS", "Rezervari2026!"),
+        port=5432
     )
 
 # -----------------------------------------------------------------------
-# ENDPOINT 1: GET /events
-# Returneaza lista tuturor evenimentelor cu locuri disponibile
+# ENDPOINT 1: GET /
+# Serveste interfata web HTML pentru utilizatori
+# -----------------------------------------------------------------------
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return HTMLResponse(content=open("index.html").read())
+
+# -----------------------------------------------------------------------
+# ENDPOINT 2: GET /events
+# Returneaza lista evenimentelor cu locuri disponibile (folosit de UI)
 # -----------------------------------------------------------------------
 @app.get("/events")
 def get_events():
-    conn = get_connection()           # deschidem conexiunea
-    cursor = conn.cursor()            # cream un cursor pentru a executa SQL
-    
-    # Selectam evenimentele care mai au locuri libere
-    cursor.execute("""
-        SELECT id, titlu, data_ora, locuri_disponibile 
-        FROM Events 
-        WHERE locuri_disponibile > 0
-    """)
-    
-    rows = cursor.fetchall()          # luam toate rezultatele
-    cursor.close()
-    conn.close()                      # inchidem conexiunea dupa ce am terminat
-    
-    # Transformam rezultatele intr-o lista de dictionare (format JSON)
-    return [
-        {
-            "id": r[0],
-            "titlu": r[1],
-            "data_ora": str(r[2]),
-            "locuri_disponibile": r[3]
-        }
-        for r in rows
-    ]
-
-# -----------------------------------------------------------------------
-# ENDPOINT 2: POST /reserve
-# Creeaza o rezervare noua pentru un utilizator la un eveniment
-# -----------------------------------------------------------------------
-@app.post("/reserve")
-def rezerva(user_id: int, event_id: int):
     conn = get_connection()
     cursor = conn.cursor()
-    
-    # Verificam daca mai sunt locuri disponibile la eveniment
-    cursor.execute(
-        "SELECT locuri_disponibile FROM Events WHERE id = %s",
-        (event_id,)
-    )
+    cursor.execute("""
+        SELECT id, titlu, data_ora, locuri_disponibile
+        FROM Events WHERE locuri_disponibile > 0
+    """)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return [{"id": r[0], "titlu": r[1], "data_ora": str(r[2]), "locuri_disponibile": r[3]} for r in rows]
+
+# -----------------------------------------------------------------------
+# ENDPOINT 3: POST /reserve
+# Accepta nume si email (nu mai cere user_id manual)
+# Creeaza userul daca nu exista, apoi emite biletul
+# -----------------------------------------------------------------------
+@app.post("/reserve")
+def rezerva(nume: str, email: str, event_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Cauta sau creeaza utilizatorul dupa email
+    cursor.execute("SELECT id FROM Users WHERE email = %s", (email,))
+    user = cursor.fetchone()
+    if not user:
+        # Daca emailul nu exista, cream un user nou automat
+        cursor.execute(
+            "INSERT INTO Users (nume, email) VALUES (%s, %s) RETURNING id",
+            (nume, email)
+        )
+        user_id = cursor.fetchone()[0]
+    else:
+        user_id = user[0]
+
+    # Verifica daca mai sunt locuri la eveniment
+    cursor.execute("SELECT locuri_disponibile FROM Events WHERE id = %s", (event_id,))
     event = cursor.fetchone()
-    
-    # Daca evenimentul nu exista, returnam eroare 404
     if not event:
         raise HTTPException(status_code=404, detail="Evenimentul nu exista")
-    
-    # Daca nu mai sunt locuri, returnam eroare 400
     if event[0] <= 0:
         raise HTTPException(status_code=400, detail="Nu mai sunt locuri disponibile")
-    
-    # Generam un cod unic de validare pentru bilet (ex: 550e8400-e29b-41d4...)
+
+    # Genereaza cod unic de validare pentru bilet
     cod_unic = str(uuid4())
-    
-    # Scadem un loc disponibil din eveniment
+
+    # Scade un loc si insereaza biletul - operatie atomica
     cursor.execute(
         "UPDATE Events SET locuri_disponibile = locuri_disponibile - 1 WHERE id = %s",
         (event_id,)
     )
-    
-    # Inseram biletul nou in tabela Tickets
     cursor.execute(
-        """INSERT INTO Tickets (user_id, event_id, cod_validare, status) 
-           VALUES (%s, %s, %s, 'activ')""",
+        "INSERT INTO Tickets (user_id, event_id, cod_validare, status) VALUES (%s, %s, %s, 'activ')",
         (user_id, event_id, cod_unic)
     )
-    
-    conn.commit()   # salvam modificarile in baza de date (ACID - atomicitate)
+    conn.commit()
     cursor.close()
     conn.close()
-    
+
     return {"mesaj": "Rezervare reusita!", "cod_bilet": cod_unic, "status": "activ"}
 
 # -----------------------------------------------------------------------
-# ENDPOINT 3: GET /validate/{cod}
-# Verifica daca un bilet este valid pe baza codului sau unic
+# ENDPOINT 4: GET /validate/{cod}
+# Verifica daca un bilet este valid dupa codul UUID
 # -----------------------------------------------------------------------
 @app.get("/validate/{cod}")
 def valideaza_bilet(cod: str):
     conn = get_connection()
     cursor = conn.cursor()
-    
-    # Cautam biletul cu codul dat, impreuna cu detalii despre user si eveniment
     cursor.execute("""
         SELECT t.id, t.status, u.nume, e.titlu
         FROM Tickets t
@@ -113,24 +108,19 @@ def valideaza_bilet(cod: str):
         JOIN Events e ON t.event_id = e.id
         WHERE t.cod_validare = %s
     """, (cod,))
-    
     bilet = cursor.fetchone()
     cursor.close()
     conn.close()
-    
-    # Daca nu gasim biletul, returnam eroare 404
     if not bilet:
         raise HTTPException(status_code=404, detail="Bilet invalid sau inexistent")
-    
-    return {
-        "valid": True,
-        "bilet_id": bilet[0],
-        "status": bilet[1],
-        "utilizator": bilet[2],
-        "eveniment": bilet[3]
-    }
+    return {"valid": True, "bilet_id": bilet[0], "status": bilet[1], "utilizator": bilet[2], "eveniment": bilet[3]}
 
-# Endpoint de health check - verifica daca aplicatia ruleaza
+# -----------------------------------------------------------------------
+# ENDPOINT 5: GET /health
+# Verifica starea serviciului
+# -----------------------------------------------------------------------
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "versiune": "2.0"}
+    return {"status": "ok", "versiune": "3.0"}
+'''
+print(MAIN_PY)
