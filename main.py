@@ -119,8 +119,10 @@ def valideaza_bilet(cod: str):
 # ENDPOINT 5: GET /health
 # Verifica starea serviciului
 # -----------------------------------------------------------------------
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "versiune": "3.0"}
+@app.get("/", response_class=HTMLResponse)
+def home():
+    # Adăugăm encoding="utf-8" pentru a citi corect caracterele speciale și diacriticele
+    with open("index.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
 '''
 print(MAIN_PY)
