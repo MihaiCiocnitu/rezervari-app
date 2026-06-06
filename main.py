@@ -126,9 +126,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 </body>
 </html>"""
 
-@app.get("/", response_class=HTMLResponse)
-def home():
-    return HTMLResponse(content=HTML_CONTENT)
+
 
 @app.get("/", response_class=HTMLResponse)
 def home():
