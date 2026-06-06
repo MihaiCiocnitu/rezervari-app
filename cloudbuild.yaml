@@ -1,0 +1,28 @@
+# cloudbuild.yaml - Pipeline automat de build si deploy
+# Se executa automat la fiecare push pe GitHub
+
+steps:
+  # Pasul 1: Construieste imaginea Docker cu codul nou
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-t'  # tag-uim imaginea cu versiunea commitului
+      - 'europe-west3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/rezervari-api:$SHORT_SHA'
+      - '.'   # folosim Dockerfile-ul din folderul curent
+
+  # Pasul 2: Trimite imaginea in Artifact Registry (depozitul de imagini GCP)
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'europe-west3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/rezervari-api:$SHORT_SHA'
+
+  # Pasul 3: Deployeaza noua imagine pe Cloud Run (zero downtime)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    args:
+      - 'gcloud'
+      - 'run'
+      - 'deploy'
+      - 'rezervari-api'
+      - '--image=europe-west3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/rezervari-api:$SHORT_SHA'
+      - '--region=europe-west3'
+      - '--platform=managed'
