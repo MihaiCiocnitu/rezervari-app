@@ -129,3 +129,8 @@ def valideaza_bilet(cod: str):
         "utilizator": bilet[2],
         "eveniment": bilet[3]
     }
+
+# Endpoint de health check - verifica daca aplicatia ruleaza
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "versiune": "2.0"}
