@@ -1,4 +1,4 @@
-MAIN_PY = '''
+
 # main.py - Microserviciu REST API pentru rezervare bilete cu interfata web
 
 from fastapi import FastAPI, HTTPException
@@ -229,5 +229,3 @@ def valideaza_bilet(cod: str):
 @app.get("/health")
 def health_check():
     return {"status": "ok", "versiune": "3.0"}
-'''
-print(MAIN_PY)
