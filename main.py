@@ -12,10 +12,10 @@ app = FastAPI(title="Rezervare Bilete API")
 # Functie de conectare la Cloud SQL PostgreSQL
 def get_connection():
     return psycopg2.connect(
-        host=os.getenv("DB_HOST", "34.40.24.192"),
-        database=os.getenv("DB_NAME", "rezervari_db"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASS", "Rezervari2026!"),
+        host=os.getenv("DB_HOST", ""),
+        database=os.getenv("DB_NAME", ""),
+        user=os.getenv("DB_USER", ""),
+        password=os.getenv("DB_PASS", ""),
         port=5432
     )
 
